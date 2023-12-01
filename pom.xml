@@ -24,7 +24,21 @@
     </properties>
  
     <dependencies>
-        <!-- ... your dependencies ... -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-thymeleaf</artifactId>
+        </dependency>
+ 
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+ 
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
  
     <build>
@@ -36,12 +50,5 @@
         </plugins>
 	<finalName>springbootApp</finalName>
     </build>
-
-    <!-- Add the distributionManagement section -->
-    <distributionManagement>
-        <repository>
-            <id>artifactory</id>
-            <url>http://34.229.154.150:8082/artifactory/jenkins-repo</url>
-        </repository>
-    </distributionManagement>
+ 
 </project>
