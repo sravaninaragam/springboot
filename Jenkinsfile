@@ -2,62 +2,75 @@ pipeline {
     agent any
 
     environment {
-        mvnHome = tool 'Maven3'
+        registry = "912583867239.dkr.ecr.us-west-1.amazonaws.com/my-docker-repo"
+        sonarqubeScannerHome = tool 'sonar-scanner'
     }
 
     stages {
-        stage('Checkout') {
+        stage('Cloning Git') {
             steps {
-                script {
-                    checkout scm
-                }
+                checkout([$class: 'GitSCM', branches: [[name: '*/main']], doGenerateSubmoduleConfigurations: false, extensions: [], submoduleCfg: [], userRemoteConfigs: [[credentialsId: 'git', url: 'https://github.com/sravaninaragam/springboot.git']]])
             }
         }
 
         stage('Build') {
             steps {
+                sh 'mvn clean install'
+            }
+        }
+
+        stage('Building image') {
+            steps {
                 script {
-                    sh 'mvn -f MyAwesomeApp/pom.xml clean install'
+                    dockerImage = docker.build registry
                 }
             }
         }
 
-        stage('Archive') {
+        stage('Pushing to ECR') {
             steps {
                 script {
-                    archiveArtifacts '**/*.jar'
-                }
-            }
-        }
-
-        stage('Docker Build') {
-            steps {
-                script {
-                    // Build and push image with Jenkins' docker-plugin
-                    withDockerServer([uri: "tcp://localhost:4243"]) {
-                        withDockerRegistry([credentialsId: "fa32f95a-2d3e-4c7b-8f34-11bcc0191d70", url: "https://index.docker.io/v1/"]) {
-                            def customImage = docker.build("ananthkannan/mywebapp", "MyAwesomeApp")
-                            customImage.push()
-                        }
+                    withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', accessKeyVariable: 'AWS_ACCESS_KEY_ID', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY', credentialsId: 'AWS']]) {
+                        sh '''
+                            aws ecr get-login-password --region us-west-1 | docker login --username AWS --password-stdin 912583867239.dkr.ecr.us-west-1.amazonaws.com
+                            docker push 912583867239.dkr.ecr.us-west-1.amazonaws.com/my-docker-repo:latest
+                            aws eks update-kubeconfig --region us-west-1 --name k8s-eks
+                            kubectl get nodes
+                            pwd
+                            ls
+                            kubectl apply -f eks-deploy-k8s.yaml
+                        '''
                     }
                 }
             }
         }
 
-        stage('Docker Stop Container') {
+        stage('SonarQube Analysis') {
             steps {
-                script {
-                    sh 'docker ps -f name=myContainer -q | xargs --no-run-if-empty docker container stop'
-                    sh 'docker container ls -a -fname=myContainer -q | xargs -r docker container rm'
+                withSonarQubeEnv('sonar-scanner') {
+                    sh "mvn sonar:sonar -Dsonar.projectKey=sonar -Dsonar.sources=. -Dsonar.host.url=http://3.101.125.242:9000"
                 }
             }
         }
 
-        stage('Docker Run') {
+        stage('Push to JFrog Artifactory') {
+            steps {
+                sh 'jfrog --version' 
+                sh 'jfrog rt c clear'
+                sh 'jfrog rt ping --url=http://54.190.58.123:8082/artifactory'
+                sh 'jfrog rt c --url=http://54.190.58.123:8082/artifactory --user=developer --password=Developer@123'
+                sh 'jfrog rt c show'
+                sh 'jfrog rt u target/*.jar my-repo'
+            }
+        }
+
+        stage('vault secrets') {
             steps {
                 script {
-                    customImage = docker.image("ananthkannan/mywebapp")
-                    customImage.run("-p 8085:8085 --rm --name myContainer")
+                    withCredentials([string(credentialsId: 'vault-secrets', variable: 'SECRET_KEY')]) {
+                        // Your pipeline steps using the secret
+                        sh 'echo $SECRET_KEY'
+                    }
                 }
             }
         }
